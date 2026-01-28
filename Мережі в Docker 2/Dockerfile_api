@@ -1,0 +1,48 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /app
+
+RUN dotnet new webapi -n Api
+WORKDIR /app/Api
+
+RUN dotnet add package Microsoft.EntityFrameworkCore --version 8.0.4
+RUN dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL --version 8.0.4
+
+RUN printf '%s\n' \
+"using Microsoft.EntityFrameworkCore;" \
+"" \
+"var builder = WebApplication.CreateBuilder(args);" \
+"" \
+"builder.Services.AddDbContext<AppDbContext>(options =>" \
+"    options.UseNpgsql(\"Host=postgres;Port=5432;Database=appdb;Username=postgres;Password=postgres\"));" \
+"" \
+"var app = builder.Build();" \
+"" \
+"using (var scope = app.Services.CreateScope())" \
+"{" \
+"    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();" \
+"    Console.WriteLine(\"[EF] Checking database connection...\");" \
+"    db.Database.CanConnect();" \
+"    Console.WriteLine(\"[EF] Database connection OK\");" \
+"}" \
+"" \
+"app.MapGet(\"/\", () => \"API is running\");" \
+"app.Run();" \
+> Program.cs
+
+RUN printf '%s\n' \
+"using Microsoft.EntityFrameworkCore;" \
+"" \
+"public class AppDbContext : DbContext" \
+"{" \
+"    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}" \
+"}" \
+> AppDbContext.cs
+
+RUN dotnet publish -c Release -o /out
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /out .
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Api.dll"]
